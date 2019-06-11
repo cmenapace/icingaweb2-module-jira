@@ -92,10 +92,13 @@ class RestApi
 
     public function eventuallyGetLatestOpenIssueKeyFor($host, $service = null)
     {
+        $config = Config::module('jira');
+        $unhandled_states = $config->get('filter', 'unhandled_states');
+
         try {
             $start = 0;
             $limit = 1;
-            $query = $this->prepareIssueQuery($host, $service, true);
+            $query = $this->prepareIssueQuery($host, $service, true, $unhandled_states);
 
             $issues = $this->post('search', [
                 'jql'        => $query,
@@ -118,13 +121,17 @@ class RestApi
         }
     }
 
-    protected function prepareIssueQuery($host = null, $service = null, $onlyOpen = true)
+    protected function prepareIssueQuery($host = null, $service = null, $onlyOpen = true, $states = null)
     {
         // TODO: eventually also filter for project = "..."?
         $query = 'creator = currentUser()';
 
         if ($onlyOpen) {
             $query .= ' AND resolution is empty';
+        }
+
+        if ($states) {
+            $query .= ' AND status in (' . $states . ')';
         }
 
         if ($host === null) {
