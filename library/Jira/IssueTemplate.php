@@ -3,10 +3,16 @@
 namespace Icinga\Module\Jira;
 
 use Icinga\Application\Config;
+use Icinga\Module\Monitoring\Object\MonitoredObject;
+use Icinga\Module\Monitoring\Object\Host;
+use Icinga\Module\Monitoring\Object\Service;
 
 class IssueTemplate
 {
     protected $custom = [];
+    
+    /** @var  MonitoredObject */
+    private $object;
 
     public function getFilled($params)
     {
@@ -40,26 +46,57 @@ class IssueTemplate
         return $this;
     }
 
+    public function setIcingaObject(MonitoredObject $object)
+    {
+        $this->object = $object;
+    }
+
     protected function addToFields(& $fields, $key, $value)
     {
+        if($value === '') {
+            return;
+        }
+        
+        $value = str_replace('\n', "\n", $value);
         $dot = strpos($key, '.');
         if (false === $dot) {
             $fields[$key] = $value;
         } else {
             $remaining = substr($key, $dot + 1);
             $key = substr($key, 0, $dot);
-            if (! array_key_exists($key, $fields)) {
-                $fields[$key] = [];
-            }
 
-            $this->addToFields($fields[$key], $remaining, $value);
+            if(strpos($remaining, '.') !== false) {
+                $remaining = substr($remaining, 1);
+                $subkey[$remaining] = $value;
+                $fields[$key][] = $subkey;
+            } else {
+                if (! array_key_exists($key, $fields)) {
+                    $fields[$key] = [];
+                }
+
+                $this->addToFields($fields[$key], $remaining, $value);
+            }
         }
     }
 
     protected function fillTemplate($string, $params)
     {
+        $icinga_pattern = '/\$([a-zA-Z0-9\._]+)\$/';
+        $string = preg_replace_callback(
+            $icinga_pattern,
+            function ($match) {
+                $value = $this->getIcingaObjectValue($match[1]);
+                if($value !== '') {
+                    return $value;
+                } else {
+                    return $match[0];
+                }
+            },
+            $string
+        );
+
         $pattern = '/\$\{([a-zA-Z0-9]+)\}/';
-        return preg_replace_callback(
+        $string = preg_replace_callback(
             $pattern,
             function ($match) use ($params) {
                 $name = $match[1];
@@ -74,6 +111,7 @@ class IssueTemplate
             },
             $string
         );
+        return $string;
     }
 
     protected function getIcingaKeyFromParams($params)
@@ -103,5 +141,36 @@ class IssueTemplate
             'icingaKey'      => '${icingaKey}',
             'icingaStatus'   => '${state}',
         ];
+    }
+
+    private function getIcingaObjectVars()
+    {
+        $object = $this->object;
+
+        $vars = [];
+        $service_vars = [];
+        $host_vars = $object->hostVariables;
+
+        if ($object->getType() === 'service') {
+            $service_vars = $object->serviceVariables;
+        }
+
+        $vars['service'] = $service_vars;
+        $vars['host'] = $host_vars;
+
+        return $vars;
+    }
+
+    private function getIcingaObjectValue($key)
+    {
+        list($type, $dummy, $var_name) = explode('.', $key);
+
+        $objectVars = $this->getIcingaObjectVars();
+
+        if(array_key_exists($var_name, $objectVars[$type])) {
+            return $objectVars[$type][$var_name];
+        } else {
+            return '';
+        }
     }
 }

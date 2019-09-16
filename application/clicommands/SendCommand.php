@@ -8,6 +8,10 @@ use Icinga\Module\Jira\IcingaCommandPipe;
 use Icinga\Module\Jira\Cli\Command;
 use Icinga\Module\Jira\IssueTemplate;
 use Icinga\Module\Jira\LegacyCommandPipe;
+use Icinga\Module\Monitoring\Object\MonitoredObject;
+use Icinga\Module\Monitoring\Object\Host;
+use Icinga\Module\Monitoring\Object\Service;
+use Icinga\Module\Monitoring\Backend;
 
 class SendCommand extends Command
 {
@@ -70,6 +74,14 @@ class SendCommand extends Command
 
             $template = new IssueTemplate();
             if ($tplName) {
+                if ($service) {
+                    $object = new Service(Backend::instance(), $host, $service);
+                } else {
+                    $object = new Host(Backend::instance(), $host);
+                }
+                $object->fetch();
+
+                $template->setIcingaObject($object);
                 $template->addByTemplateName($tplName);
             }
 
